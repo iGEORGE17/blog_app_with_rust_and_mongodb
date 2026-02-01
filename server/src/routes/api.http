@@ -1,0 +1,73 @@
+
+@baseUrl = http://localhost:3000
+
+POST {{baseUrl}}/users/register HTTP/1.1
+Content-Type: application/json
+
+{
+    "username": "giomalli",
+    "email": "giomalli@gmail.com",
+    "password": "qwerty123456",
+    "role": "user"
+}
+
+###
+
+# @name login
+POST {{baseUrl}}/users/login HTTP/1.1
+Content-Type: application/json
+
+{
+    "email": "giomalli@gmail.com",
+    "password": "qwerty123456"
+}
+
+### get current user profile
+GET {{baseUrl}}/users/me
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+### Update Profile
+PATCH {{baseUrl}}/users/edit_profile
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{
+    "username": "giomalli_001"
+}
+
+###
+
+### Create a Post
+POST {{baseUrl}}/posts
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{
+    "title": "My Second Rust Blog Post",
+    "content": "Rust and MongoDB couldn't be better!"
+}
+
+### get all posts with authors
+GET {{baseUrl}}/posts
+Content-Type: application/json
+
+### get post by id
+GET {{baseUrl}}/posts/697f6ecd996b0adff1bac21b
+Content-Type: application/json
+
+
+### Update Post
+PATCH {{baseUrl}}/posts/697f6f92e987431be3750861
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{
+    "title": "Updated Rust Blog Post",
+    "content": "Can't wait to see what's next!"
+}
+
+### Delete Post
+DELETE {{baseUrl}}/posts/697f70c068da6033ced1739f
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
