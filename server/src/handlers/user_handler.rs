@@ -111,6 +111,13 @@ pub async fn login_user(
     })))
 }
 
+
+pub async fn logout_user() -> impl IntoResponse {
+    // For JWT, logout is typically handled client-side by deleting the token.
+    // Optionally, you could implement token blacklisting here.
+    (StatusCode::OK, "Logged out successfully")
+}
+
 /// Handler to get current user
 pub async fn get_current_user(
     State(state): State<Arc<AppState>>,
