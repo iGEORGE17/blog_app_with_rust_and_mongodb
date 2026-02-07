@@ -41,7 +41,7 @@ pub async fn create_post(
 }
 
 
-pub async fn get_posts_with_authors(
+pub async fn get_posts(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {
     let collection = state.db.collection::<Post>("posts");
@@ -77,6 +77,53 @@ pub async fn get_posts_with_authors(
     let mut results = Vec::new();
     while let Some(doc) = cursor.try_next().await.map_err(|_| AppError::InternalServerError)? {
         // Convert BSON document to our Rust struct
+        let post: PostWithAuthor = bson::from_document(doc)
+            .map_err(|_| AppError::InternalServerError)?;
+        results.push(post);
+    }
+
+    Ok(Json(results))
+}
+
+
+pub async fn get_post_by_author(
+    State(state): State<Arc<AppState>>,
+    auth: AuthUser,
+) -> Result<impl IntoResponse, AppError> {
+    let collection = state.db.collection::<Post>("posts");
+
+    // Convert string ID from JWT back to ObjectId
+    let author_id = ObjectId::parse_str(&auth.user_id)
+        .map_err(|_| AppError::BadRequest)?;
+
+    let pipeline = vec![
+        doc! { "$match": { "author_id": author_id } },
+        doc! {
+            "$lookup": {
+                "from": "users",
+                "localField": "author_id",
+                "foreignField": "_id",
+                "as": "author_info"
+            }
+        },
+        doc! { "$unwind": "$author_info" },
+        doc! {
+            "$project": {
+                "_id": 1,
+                "title": 1,
+                "content": 1,
+                "created_at": 1,
+                "updated_at": 1,
+                "author_name": "$author_info.username"
+            }
+        },
+    ];
+
+    let mut cursor = collection.aggregate(pipeline).await
+        .map_err(|_| AppError::InternalServerError)?;
+
+    let mut results = Vec::new();
+    while let Some(doc) = cursor.try_next().await.map_err(|_| AppError::InternalServerError)? {
         let post: PostWithAuthor = bson::from_document(doc)
             .map_err(|_| AppError::InternalServerError)?;
         results.push(post);
