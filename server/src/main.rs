@@ -17,6 +17,8 @@ use dotenvy::dotenv;
 use tower_http::cors::{Any, CorsLayer};
 use axum::http::Method;
 
+use crate::db::connect_db;
+
 pub struct AppState {
     pub db: mongodb::Database,
 }
@@ -24,7 +26,10 @@ pub struct AppState {
 #[tokio::main]
 async fn main() {
     dotenv().ok();
-    let database = db::init_db().await;
+
+    // 2. Connect to DB (this also runs init_db with indexes)
+    let database = connect_db().await;
+    
     let shared_state = Arc::new(AppState { db: database });
 
     let cors = CorsLayer::new()

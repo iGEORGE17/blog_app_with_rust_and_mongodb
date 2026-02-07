@@ -14,7 +14,8 @@ pub enum AppError {
     NotFound,            // Used when ID doesn't exist
     InternalServerError, // The "catch-all"
     Forbidden,           // For non-admins trying to do admin stuff
-    BadRequest
+    BadRequest,
+    Conflict
 }
 
 
@@ -47,7 +48,9 @@ impl IntoResponse for AppError {
                 "You do not have permission to perform this action"
             ),
             Self::BadRequest => (StatusCode::BAD_REQUEST, "Bad Request"),
+            Self::Conflict => (StatusCode::CONFLICT, "Resource already exists"),
         };
+
 
         let body = Json(json!({
             "error": error_message,

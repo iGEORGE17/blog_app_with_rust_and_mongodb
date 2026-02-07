@@ -1,7 +1,7 @@
 use axum::{extract::State, Json, http::StatusCode, response::IntoResponse, extract::Path};
 use std::sync::Arc;
 use bcrypt::{hash, verify, DEFAULT_COST};
-use crate::models::user::{User, RegisterUserRequest, LoginRequest, AuthBody, Claims, UpdateUserRequest, UserResponse};
+use crate::models::user::{AuthBody, Claims, LoginRequest, RegisterUserRequest, UpdateProfileRequest, User, UserResponse, UserRole};
 use crate::AppState;
 use crate::error::AppError;
 use chrono::Utc;
@@ -10,39 +10,89 @@ use mongodb::bson::doc;
 use validator::Validate;
 use crate::middleware::AuthUser;
 use bson::oid::ObjectId;
-use futures::TryStreamExt;
 use futures::stream::StreamExt;
 
 
-/// Handler to register a new user
 pub async fn register_user(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<RegisterUserRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // 1. Validate the input (mapped to a Bad Request via AppError)
-    payload.validate().map_err(|_| AppError::MissingCredentials)?;
+    let collection = state.db.collection::<User>("users");
 
-    // 2. Hash the password
-    let hashed = hash(payload.password, DEFAULT_COST)
+    // 1. Check if email is already taken
+    let count = collection
+        .count_documents(doc! { "email": &payload.email })
+        .await
         .map_err(|_| AppError::InternalServerError)?;
 
-    // 3. Create the User struct (Including the role from payload)
+    if count > 0 {
+        return Err(AppError::BadRequest);
+    }
+
+    // 2. Hash password
+    let hashed_password = hash(payload.password, DEFAULT_COST)
+        .map_err(|_| AppError::InternalServerError)?;
+
+    // 3. Create the User instance with default Role
     let new_user = User {
         id: None,
-        username: payload.username,
-        email: payload.email,
-        password: hashed,
-        role: payload.role, // Mapping the enum role
+        username: payload.username.clone(),
+        email: payload.email.clone(),
+        password: hashed_password,
+        role: UserRole::User, // Hardcoded safety
     };
 
-    // 4. Insert into MongoDB
-    let collection = state.db.collection::<User>("users");
-    collection.insert_one(new_user).await
-        .map_err(|_| AppError::InternalServerError)?;
+// 4. Insert with Duplicate Key detection (The safety net)
+    let result = collection.insert_one(new_user).await.map_err(|e| {
+        if let mongodb::error::ErrorKind::Write(
+            mongodb::error::WriteFailure::WriteError(we),
+        ) = *e.kind
+        {
+            if we.code == 11000 {
+                return AppError::Conflict; // Catch race conditions
+            }
+        }
+        AppError::InternalServerError
+    })?;
 
-    // 5. SUCCESS: Wrapped in Ok()
-    Ok((StatusCode::CREATED, "User registered successfully"))
+    let new_id = result
+        .inserted_id
+        .as_object_id()
+        .ok_or(AppError::InternalServerError)?;
+
+    // 5. Create JWT
+    let expiration = Utc::now()
+        .checked_add_signed(chrono::Duration::hours(24))
+        .expect("valid timestamp")
+        .timestamp() as usize;
+
+    let claims = Claims {
+        sub: new_id.to_hex(),
+        // Ensure UserRole has a to_string() or use format!("{:?}", role)
+        role: format!("{:?}", UserRole::User), 
+        exp: expiration,
+    };
+
+    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret".into());
+    let token = encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(secret.as_bytes()),
+    ).map_err(|_| AppError::InternalServerError)?;
+
+    // 6. Return both Token and User Object
+    Ok((StatusCode::CREATED, Json(AuthBody {
+        access_token: token,
+        token_type: "Bearer".to_string(),
+        user: UserResponse {
+            id: new_id.to_hex(),
+            username: payload.username,
+            email: payload.email,
+            role: UserRole::User.to_string(),
+        },
+    })))
 }
+
 
 /// Handler to log in a user and return a JWT
 pub async fn login_user(
@@ -108,6 +158,12 @@ pub async fn login_user(
     Ok((StatusCode::OK, Json(AuthBody {
         access_token: token,
         token_type: "Bearer".to_string(),
+        user: UserResponse {
+            id: user.id.unwrap().to_hex(),
+            username: user.username,
+            email: user.email,
+            role: user.role.to_string(),
+        },
     })))
 }
 
@@ -147,33 +203,44 @@ let response = UserResponse {
     Ok(Json(response))
 }
 
-/// Handler to update user
 pub async fn update_profile(
     State(state): State<Arc<AppState>>,
-    auth: AuthUser, // This extractor validates the JWT automatically
-    Json(payload): Json<UpdateUserRequest>,
+    auth: AuthUser, // Your JWT extractor
+    Json(payload): Json<UpdateProfileRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // 1. Validate input
-    payload.validate().map_err(|_| AppError::MissingCredentials)?;
-
     let collection = state.db.collection::<User>("users");
-    
-    // 2. Convert string ID from JWT back to MongoDB ObjectId
-    let user_id = ObjectId::parse_str(&auth.user_id)
-        .map_err(|_| AppError::InternalServerError)?;
+    let obj_id = ObjectId::parse_str(&auth.user_id).map_err(|_| AppError::BadRequest)?;
 
-    // 3. Update the username if provided
-    if let Some(new_username) = payload.username {
-        collection
-            .update_one(
-                doc! { "_id": user_id },
-                doc! { "$set": { "username": new_username } }
-            )
-            .await
-            .map_err(|_| AppError::InternalServerError)?;
+    // 1. Build the update document
+    let mut update_doc = doc! {};
+    if let Some(u) = payload.username { update_doc.insert("username", u); }
+    if let Some(e) = payload.email { update_doc.insert("email", e); }
+
+    if update_doc.is_empty() {
+        return Err(AppError::BadRequest);
     }
 
-    Ok((StatusCode::OK, "Profile updated successfully"))
+    // 2. Perform the update
+    let result = collection
+        .update_one(doc! { "_id": obj_id }, doc! { "$set": update_doc })
+        .await;
+
+    // 3. Handle Duplicate Key Errors (11000)
+    match result {
+        Ok(res) if res.matched_count == 0 => Err(AppError::NotFound),
+        Ok(_) => Ok(StatusCode::OK),
+        Err(e) => {
+            if let mongodb::error::ErrorKind::Write(
+                mongodb::error::WriteFailure::WriteError(we)
+            ) = *e.kind {
+                if we.code == 11000 {
+                    // This triggers if the new username/email is already taken
+                    return Err(AppError::Conflict);
+                }
+            }
+            Err(AppError::InternalServerError)
+        }
+    }
 }
 
 /// Handler for admin to get all users

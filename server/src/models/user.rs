@@ -67,6 +67,7 @@ pub struct LoginRequest {
 pub struct AuthBody {
     pub access_token: String,
     pub token_type: String,
+    pub user: UserResponse, // <--- Add this
 }
 
 
@@ -88,7 +89,8 @@ pub struct Claims {
 }
 
 #[derive(Deserialize, Validate)]
-pub struct UpdateUserRequest {
+pub struct UpdateProfileRequest {
     #[validate(length(min = 3, message = "Username must be at least 3 characters"))]
     pub username: Option<String>,
+    pub email: Option<String>,
 }

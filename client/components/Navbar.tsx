@@ -11,62 +11,69 @@ import {
   Link, 
   Button, 
   SkeletonCircle,
-  Avatar,
-  Menu,
+  Circle,
+  Menu
 } from "@chakra-ui/react"
 
 import { ColorModeButton } from "@/components/ui/color-mode"
-import { useAuth } from "@/contexts/auth" // Ensure this path is correct
 import { AuthModal } from "./AuthModal"
-import { LuUser, LuSettings, LuBookmark, LuLogOut } from "react-icons/lu"
+import { LuLogOut, LuLayoutDashboard, LuSettings, LuSquarePen } from "react-icons/lu"
+import { useAuth } from "@/contexts/auth"
 
-// 1. Updated UserMenu to receive the logout function
-function UserMenu({ user, onLogout }: { user: any, onLogout: () => void }) {
+// 1. Destructure props here: { user, logout }
+export const UserMenu = ({ user, logout }: { user: any; logout: any }) => {
   return (
     <Menu.Root positioning={{ placement: "bottom-end" }}>
       <Menu.Trigger asChild>
-        <Button variant="ghost" rounded="full" p="0" size="sm">
-          <Avatar.Root size={"md"}>
-            {/* Safe check for username */}
-            <Avatar.Fallback>{(user?.username || "U").charAt(0).toUpperCase()}</Avatar.Fallback>
-            {user?.image && <Avatar.Image src={user.image} alt={user.username} />}
-          </Avatar.Root>
+        <Button variant="ghost" shape="circle" size="sm" p="0">
+          <Circle size="32px" bg="blue.500" color="white" fontWeight="bold">
+            {/* Safe check with optional chaining */}
+            {user?.username?.charAt(0).toUpperCase()}
+          </Circle>
         </Button>
       </Menu.Trigger>
-      
-      <Menu.Content zIndex="popover" position={"absolute"} top="60px" right={"0px"}  maxWidth="md" rounded="md" shadow="lg">
-        <Box px="3" py="2" borderBottomWidth="1px" borderColor="border.subtle">
-          <Text fontWeight="bold" fontSize="sm">{user?.username}</Text>
-          <Text fontSize="xs" color="fg.muted" truncate>{user?.email}</Text>
-        </Box>      
-        
-        <Menu.Item value="profile" cursor="pointer">
-          <HStack gap="2"><LuUser size={16} /> Profile</HStack>
-        </Menu.Item>
-        <Menu.Item value="bookmarks" cursor="pointer">
-          <HStack gap="2"><LuBookmark size={16} /> Reading List</HStack>
-        </Menu.Item>
-        <Menu.Item value="settings" cursor="pointer" borderBottomWidth="1px" borderColor="border.subtle">
-          <HStack gap="2"><LuSettings size={16} /> Settings</HStack>
-        </Menu.Item>
-        
-        <Menu.Item 
-          value="logout" 
-          color="fg.error" 
-          _hover={{ bg: "bg.error/10" }} 
-          cursor="pointer"
-          onClick={onLogout} // Trigger the logout from context
-        >
-          <HStack gap="2"><LuLogOut size={16} /> Sign Out</HStack>
-        </Menu.Item>
-      </Menu.Content>
+
+      <Menu.Positioner>
+        <Menu.Content minW="200px" borderRadius="lg" p="1" shadow="md">
+          <Box px="3" py="2" borderBottomWidth="1px" borderColor="border.subtle">
+            <Text fontWeight="semibold" fontSize="sm">{user?.email}</Text>
+            <Text fontSize="xs" color="fg.muted">{user?.username}</Text>
+          </Box>
+
+          <Menu.ItemGroup title="Account">
+            <Menu.Item value="dashboard" cursor="pointer" asChild>
+              <NextLink href="/dashboard">
+                <LuLayoutDashboard />
+                <Box flex="1">Dashboard</Box>
+              </NextLink>
+            </Menu.Item>
+            
+            <Menu.Item value="settings" cursor="pointer">
+              <LuSettings />
+              <Box flex="1">Settings</Box>
+            </Menu.Item>
+          </Menu.ItemGroup>
+
+          <Menu.Separator />
+
+          <Menu.Item 
+            value="logout" 
+            onClick={logout}
+            color="red.500"
+            _hover={{ bg: "red.50", color: "red.600" }}
+            cursor="pointer"
+          >
+            <LuLogOut />
+            <Box flex="1">Sign Out</Box>
+          </Menu.Item>
+        </Menu.Content>
+      </Menu.Positioner>
     </Menu.Root>
   )
 }
 
 export const Navbar = () => {
-  // 2. Use the central Auth Context instead of a local useQuery
-  const { user, isLoading, logout } = useAuth()
+  const { user, isLoading, isAuthenticated, logout } = useAuth()
 
   return (
     <Box 
@@ -90,24 +97,31 @@ export const Navbar = () => {
             </NextLink>
           </Link>
 
-          <HStack gap={6}>
-            <HStack gap={6} display={{ base: "none", md: "flex" }}>
-              <Link asChild fontSize="sm" fontWeight="medium" color="fg.muted" _hover={{ color: "fg.default" }}>
-                <NextLink href="/posts">Articles</NextLink>
-              </Link>
-            </HStack>
+          <HStack gap={4}>
+            <ColorModeButton />
 
-            <HStack gap={4}>
-              <ColorModeButton />
-
-              {isLoading ? (
-                <SkeletonCircle size="8" />
-              ) : user ? (
-                <UserMenu user={user} onLogout={logout} />
-              ) : (
-                <AuthModal />
-              )}
-            </HStack>
+            {isLoading ? (
+              <SkeletonCircle size="8" />
+            ) : isAuthenticated ? (
+              <>
+                <Button 
+                  asChild 
+                  variant="ghost" 
+                  size="sm" 
+                  display={{ base: "none", sm: "flex" }}
+                  gap="2"
+                >
+                  <NextLink href="/posts/new">
+                    <LuSquarePen size={16} />
+                    Write
+                  </NextLink>
+                </Button>
+                {/* Ensure the prop names match: user and logout */}
+                <UserMenu user={user} logout={logout} />
+              </>
+            ) : (
+              <AuthModal />
+            )}
           </HStack>
         </Flex>
       </Container>

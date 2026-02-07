@@ -9,8 +9,7 @@ use futures::stream::TryStreamExt; // Required for helper methods like try_colle
 use crate::models::post::{Post, CreatePostRequest, PostWithAuthor, UpdatePostRequest};
 use crate::AppState;
 use crate::middleware::AuthUser;
-use mongodb::options::FindOptions;
-use serde::Deserialize;
+// use mongodb::options::FindOptions;
 use axum::extract::Path;
 use bson::oid::ObjectId;
 

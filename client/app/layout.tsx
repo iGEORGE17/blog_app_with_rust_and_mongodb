@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { Provider } from "@/components/ui/provider"
 import { Box } from "@chakra-ui/react";
 import { Navbar } from "@/components/Navbar";
-import { Toaster, toaster } from "@/components/ui/toaster"
+import { Toaster } from "@/components/ui/toaster"
+import { SessionProvider } from "next-auth/react"
+import { Provider as ChakraProvider } from "@/components/ui/provider"
 import { AuthProvider } from "@/contexts/auth";
 
 const geistSans = Geist({
@@ -23,18 +24,23 @@ export const metadata: Metadata = {
 };
 
 
-export default function RootLayout(props: { children: React.ReactNode }) {
-  const { children } = props
+
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        <Provider>
+        <SessionProvider> 
           <AuthProvider>
-          <Navbar />
-          <Box as={"main"}>{children}</Box>
-          <Toaster />
+          <ChakraProvider>
+              <Navbar />
+            <Box as={"main"}>
+            {children}
+            </Box>
+            <Toaster />
+          </ChakraProvider>
           </AuthProvider>
-        </Provider>
+        </SessionProvider>
       </body>
     </html>
   )
